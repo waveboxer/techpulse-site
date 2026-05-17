@@ -1,137 +1,377 @@
 
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    // DOM 节点引用
-    const priceTbody = document.getElementById('price-tbody');
-    const lbList = document.getElementById('lb-list');
-    const rssContainer = document.getElementById('rss-container');
-    const btnRefreshPrice = document.getElementById('btn-refresh-price');
-    const btnSyncLb = document.getElementById('btn-sync-lb');
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TechPulse | AI 前沿数据与资讯</title>
+  <style>
+    :root {
+      --bg: #080808;
+      --text: #f4f4f4;
+      --text-muted: #666666;
+      --accent: #FF3C00;
+      --font-serif: Georgia, "Times New Roman", serif;
+      --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      overflow-x: hidden;
+      cursor: auto;
+    }
+    body.js-loaded { cursor: none; }
+    a { text-decoration: none; color: inherit; transition: color 0.3s ease; }
+    ul { list-style: none; }
+    img { display: block; max-width: 100%; background: #111; }
 
-    // ================= 模拟本地行情 (电商平台无公开跨域接口) =================
-    const localPriceData = [
-      { model: 'NVIDIA RTX 4090 24G', jd: 14999, tb: 13200, trend: 'up', stock: '紧张' },
-      { model: 'NVIDIA RTX 4080 Super', jd: 8999, tb: 8450, trend: 'stable', stock: '充足' },
-      { model: 'AMD Radeon RX 7900 XTX', jd: 7499, tb: 6990, trend: 'down', stock: '充足' },
-      { model: 'NVIDIA H100 80G SXM', jd: 235000, tb: 218000, trend: 'up', stock: '期货排单' },
-      { model: 'NVIDIA L40S 48G', jd: 89000, tb: 84500, trend: 'stable', stock: '充足' }
-    ];
-
-    // 渲染函数
-    function renderPrices(data) {
-      priceTbody.innerHTML = '';
-      data.forEach(item => {
-        const tr = document.createElement('tr');
-        const trendLabel = item.trend === 'up' ? '↑ +2.1%' : (item.trend === 'down' ? '↓ -1.5%' : '→ 持平');
-        tr.innerHTML = `
-          <td style="font-weight:500;">${item.model}</td>
-          <td>¥${item.jd.toLocaleString()}</td>
-          <td style="color:var(--accent);">¥${item.tb.toLocaleString()}</td>
-          <td><span class="trend ${item.trend}">${trendLabel}</span></td>
-          <td style="color:#888;">${item.stock}</td>
-        `;
-        priceTbody.appendChild(tr);
-      });
+    #custom-cursor {
+      position: fixed; top: 0; left: 0;
+      width: 16px; height: 16px;
+      background: var(--accent);
+      border-radius: 50%;
+      pointer-events: none; z-index: 9999;
+      transform: translate(-50%, -50%);
+      mix-blend-mode: difference;
+      transition: width 0.25s ease, height 0.25s ease, background 0.25s ease;
+      display: none; 
     }
 
-    function renderLB(data) {
-      lbList.innerHTML = '';
-      data.slice(0, 6).forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'lb-item';
-        div.innerHTML = `
-          <span class="lb-rank">#${item.rank}</span>
-          <span class="lb-name">${item.name}</span>
-          <span class="lb-score">${item.score}</span>
-        `;
-        lbList.appendChild(div);
-      });
+    .container { padding: 0 8vw; max-width: 100%; }
+    section { padding: 20vh 0; position: relative; }
+    h1, h2, h3 { font-family: var(--font-serif); font-weight: 400; line-height: 1.05; }
+    .section-label {
+      display: inline-block; font-size: 0.75rem; letter-spacing: 0.25em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 2vh;
+      font-family: var(--font-sans); font-weight: 600;
     }
 
-    function renderRSS(source, items) {
-      const col = document.createElement('div');
-      col.className = 'rss-col';
-      col.innerHTML = `<h3>${source}</h3><div class="rss-col-list"></div>`;
-      const list = col.querySelector('.rss-col-list');
-      items.slice(0, 4).forEach(art => {
-        const div = document.createElement('div');
-        div.className = 'rss-item';
-        div.innerHTML = `
-          <div style="font-weight:500; cursor:pointer;">${art.title}</div>
-          <div class="rss-date">${new Date(art.pubDate).toLocaleString('zh-CN')}</div>
-        `;
-        div.querySelector('div').addEventListener('click', () => window.open(art.link, '_blank'));
-        list.appendChild(div);
-      });
-      rssContainer.appendChild(col);
-    }
+    .hero { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding-top: 15vh; }
+    .hero h1 { font-size: clamp(3.5rem, 11vw, 9rem); letter-spacing: -0.03em; margin-bottom: 4vh; }
+    .hero p { font-size: clamp(1rem, 1.8vw, 1.4rem); color: var(--text-muted); max-width: 600px; font-weight: 300; }
 
-    // ================= 真实网络请求 =================
-    async function fetchLMSYS() {
-      btnSyncLb.textContent = '拉取中...';
-      try {
-        const res = await fetch('/api/lmsys');
-        const data = await res.json();
-        // HF 榜单结构适配
-        const formatted = data.models
-          .sort((a, b) => (b.model_statistics?.avg_win_rate || 0) - (a.model_statistics?.avg_win_rate || 0))
-          .map((m, i) => ({
-            rank: i + 1,
-            name: m.display_name || m.model_name,
-            score: Math.round((m.model_statistics?.avg_win_rate || 0) * 1000)
-          }));
-        renderLB(formatted);
-        btnSyncLb.textContent = '✓ 榜单已同步';
-      } catch (e) {
-        console.error('LMSYS fetch failed:', e);
-        btnSyncLb.textContent = '⚠ 同步失败，请重试';
-      }
-      setTimeout(() => btnSyncLb.textContent = '↻ 拉取 LMSYS 实时榜单', 2000);
-    }
+    .parallax-text { will-change: transform; }
 
-    async function fetchRSS() {
-      const sources = [
-        { key: '36kr', name: '36氪' },
-        { key: 'qbit', name: '量子位' },
-        { key: 'jqzx', name: '机器之心' }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 6vw; }
+    .card { background: transparent; border-bottom: 1px solid #222; padding-bottom: 3vh; position: relative; perspective: 1200px; }
+    .card-visual { position: relative; overflow: hidden; aspect-ratio: 16/10; margin-bottom: 2vh; transform-style: preserve-3d; transition: transform 0.15s ease-out; }
+    .card-visual img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(100%) contrast(115%); transition: filter 0.5s ease; }
+    .card:hover .card-visual img { filter: grayscale(0%); }
+    .card-title { font-size: 1.8rem; margin-bottom: 0.8vh; }
+    .card-meta { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5vh; display: flex; gap: 1rem; }
+    .card-excerpt { color: #888; font-weight: 300; line-height: 1.5; }
+
+    .data-panel { background: #0e0e0e; border: 1px solid #1a1a1a; padding: 4vh; }
+    .data-table { width: 100%; border-collapse: collapse; margin-top: 2vh; }
+    .data-table th { text-align: left; padding: 1.5vh 0; color: var(--text-muted); font-weight: 400; font-size: 0.8rem; border-bottom: 1px solid #222; }
+    .data-table td { padding: 2vh 0; border-bottom: 1px solid #151515; font-size: 0.95rem; }
+    .trend { font-family: var(--font-sans); font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .trend.up { color: var(--accent); background: rgba(255, 60, 0, 0.1); }
+    .trend.stable { color: var(--text-muted); background: #151515; }
+
+    .lb-item { display: flex; align-items: baseline; justify-content: space-between; padding: 2.5vh 0; border-bottom: 1px solid #1a1a1a; transition: padding-left 0.3s ease; }
+    .lb-item:hover { padding-left: 12px; }
+    .lb-rank { color: var(--text-muted); font-family: var(--font-serif); font-size: 1.2rem; width: 40px; }
+    .lb-name { font-size: 1.3rem; font-weight: 500; }
+    .lb-score { font-family: var(--font-sans); color: var(--accent); font-weight: 600; }
+
+    .promo-scroll { display: flex; gap: 4vw; overflow-x: auto; padding: 2vh 0; scroll-snap-type: x mandatory; }
+    .promo-card { min-width: 320px; scroll-snap-align: start; border: 1px solid #222; padding: 4vh; position: relative; perspective: 1200px; }
+    .promo-card:hover .promo-inner { transform: perspective(1000px) rotateY(5deg) rotateX(-3deg) scale(1.02); }
+    .promo-inner { transition: transform 0.3s ease; transform-style: preserve-3d; }
+    .promo-tag { color: var(--accent); font-size: 0.7rem; letter-spacing: 0.15em; margin-bottom: 1.5vh; }
+    .promo-title { font-size: 1.4rem; margin-bottom: 1vh; }
+    .promo-btn { margin-top: 3vh; display: inline-block; padding: 1rem 2rem; border: 1px solid var(--text); color: var(--text); font-size: 0.8rem; transition: all 0.3s ease; cursor: pointer; }
+    .promo-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .rss-col h3 { font-size: 1.1rem; margin-bottom: 2vh; color: var(--text-muted); }
+    .rss-item { padding: 1.5vh 0; border-bottom: 1px dashed #222; cursor: pointer; transition: color 0.3s; }
+    .rss-item:hover { color: var(--accent); }
+    .rss-date { font-size: 0.75rem; color: #555; margin-top: 0.5vh; }
+
+    footer { padding: 10vh 8vw; border-top: 1px solid #151515; color: #444; font-size: 0.8rem; display: flex; justify-content: space-between; }
+
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 3.5rem; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div id="custom-cursor"></div>
+
+  <header class="container">
+    <nav style="padding: 4vh 0; display: flex; justify-content: space-between; align-items: center;">
+      <div style="font-family: var(--font-serif); font-size: 1.4rem; font-weight: 600;">TechPulse.</div>
+      <div style="display: flex; gap: 3vw;">
+        <a href="#hardware" style="font-size: 0.85rem; color: var(--text-muted);">硬件行情</a>
+        <a href="#models" style="font-size: 0.85rem; color: var(--text-muted);">模型榜单</a>
+        <a href="#promos" style="font-size: 0.85rem; color: var(--text-muted);">Token 权益</a>
+        <a href="#rss" style="font-size: 0.85rem; color: var(--text-muted);">信源聚合</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero container">
+      <span class="section-label parallax-text" data-speed="0.05">AI Frontier & Market Intelligence</span>
+      <h1 class="parallax-text" data-speed="0.12">算力·模型<br>与未来信号</h1>
+      <p class="parallax-text" data-speed="0.08">追踪芯片价格波动、开源大模型演进轨迹与企业落地实践。在极简的边界内，呈现高密度的前沿信息流。</p>
+    </section>
+
+    <section id="hardware" class="container">
+      <span class="section-label">01 — GPU / 芯片实时追踪</span>
+      <h2 class="parallax-text" data-speed="0.06" style="font-size: clamp(2rem, 4vw, 3.5rem); margin-bottom: 4vh;">市场报价与库存动态</h2>
+      <div class="data-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2vh;">
+          <span style="font-size: 0.8rem; color: #555;">数据源: 渠道聚合 (静态演示)</span>
+          <button id="btn-refresh-price" style="background: transparent; border: 1px solid #333; color: var(--text); padding: 0.5rem 1rem; font-size: 0.8rem; cursor: pointer;">同步最新数据</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>芯片型号</th><th>京东参考价 (¥)</th><th>淘宝渠道价 (¥)</th><th>7日趋势</th><th>库存</th></tr></thead>
+          <tbody id="price-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="models" class="container">
+      <span class="section-label">02 — 大模型行业风向</span>
+      <h2 class="parallax-text" data-speed="0.05" style="font-size: clamp(2rem, 4vw, 3.5rem); margin-bottom: 4vh;">LMSYS Chatbot Arena 排行榜</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 4vw;">
+        <div>
+          <div id="lb-list" style="border-bottom: 1px solid #222;"></div>
+          <button id="btn-sync-lb" style="margin-top: 3vh; background: transparent; border: none; color: var(--accent); cursor: pointer; font-size: 0.85rem; letter-spacing: 0.05em;"> 刷新榜单数据</button>
+        </div>
+        <div style="padding-left: 2vw;">
+          <h3 class="parallax-text" data-speed="0.04" style="font-size: 1.5rem; margin-bottom: 2vh; color: var(--text-muted);">开源 vs 闭源演进</h3>
+          <p class="parallax-text" data-speed="0.03" style="color: #777; font-weight: 300; line-height: 1.7;">
+            随着混合注意力机制与高效数据清洗策略的成熟，70B 参数级开源模型在代码生成与逻辑推理任务中已逼近头部闭源商业版。企业正逐步从“调用 API"转向“私有化微调与端侧部署”。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="promos" class="container">
+      <span class="section-label">03 — Token 补贴与权益</span>
+      <h2 class="parallax-text" data-speed="0.05" style="font-size: clamp(2rem, 4vw, 3.5rem); margin-bottom: 4vh;">主流平台限时活动</h2>
+      <div class="promo-scroll" id="promo-container"></div>
+    </section>
+
+    <section id="rss" class="container">
+      <span class="section-label">04 — 中文权威信源</span>
+      <h2 class="parallax-text" data-speed="0.05" style="font-size: clamp(2rem, 4vw, 3.5rem); margin-bottom: 6vh;">RSS 信息流聚合</h2>
+      <div class="grid" id="rss-container"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>© 2024 TechPulse Studio</span>
+    <span>聚焦技术演进与产业落地</span>
+    <span>Shanghai / Remote</span>
+  </footer>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.classList.add('js-loaded');
+      const cursor = document.getElementById('custom-cursor');
+      cursor.style.display = 'block';
+
+      const priceData = [
+        { model: 'NVIDIA RTX 4090 24G', jd: 14999, tb: 13200, trend: 'up', stock: '紧张' },
+        { model: 'NVIDIA RTX 4080 Super', jd: 8999, tb: 8450, trend: 'stable', stock: '充足' },
+        { model: 'AMD Radeon RX 7900 XTX', jd: 7499, tb: 6990, trend: 'stable', stock: '充足' },
+        { model: 'NVIDIA H100 80G SXM', jd: 235000, tb: 218000, trend: 'up', stock: '期货排单' },
+        { model: 'NVIDIA L40S 48G', jd: 89000, tb: 84500, trend: 'stable', stock: '充足' }
       ];
-      for (const s of sources) {
-        try {
-          const res = await fetch(`/api/rss/${s.key}`);
-          const json = await res.json();
-          if (json.items?.length) renderRSS(s.name, json.items);
-        } catch (e) {
-          console.warn(`${s.name} RSS fetch failed`, e);
-          renderRSS(s.name, [{ title: '数据源暂不可用，请刷新页面', link: '#', pubDate: new Date() }]);
-        }
+
+      const lbData = [
+        { rank: 1, name: 'GPT-4o', score: 1287 },
+        { rank: 2, name: 'Claude 3.5 Sonnet', score: 1265 },
+        { rank: 3, name: 'Qwen2-72B-Instruct', score: 1198 },
+        { rank: 4, name: 'LLaMA-3-70B', score: 1185 },
+        { rank: 5, name: 'Yi-1.5-34B-Chat', score: 1142 }
+      ];
+
+      const promoData = [
+        { platform: '阿里云百炼', title: '新用户免费 500 万 Token', desc: '接入通义千问系列模型，首月额度直充。' },
+        { platform: '硅基流动', title: '开源 API 限时 5 折', desc: '支持按量/包年，高并发低延迟。' },
+        { platform: '智谱 AI', title: 'GLM-4-Flash 永久免费', desc: '轻量级场景首选，无调用门槛。' }
+      ];
+
+      const rssData = {
+        '36': [
+          { title: 'OpenAI发布o1-preview，强化复杂推理能力', time: '2024-09-12 10:30' },
+          { title: '国产算力芯片获新一轮数十亿融资', time: '2024-09-11 15:20' }
+        ],
+        '量子位': [
+          { title: 'DeepSeek-V2.5 代码与数学能力大幅跃升', time: '2024-09-11 18:00' },
+          { title: 'AI Agent 落地金融风控的实战案例', time: '2024-09-10 11:40' }
+        ],
+        '机器之心': [
+          { title: 'LMSYS 最新榜单解析：开源逼近闭源', time: '2024-09-12 14:10' },
+          { title: '端侧大模型部署指南：从量化到加速', time: '2024-09-09 16:30' }
+        ]
+      };
+
+      const priceTbody = document.getElementById('price-tbody');
+      const lbList = document.getElementById('lb-list');
+      const promoContainer = document.getElementById('promo-container');
+      const rssContainer = document.getElementById('rss-container');
+
+      function renderPrices(data) {
+        priceTbody.innerHTML = '';
+        data.forEach(item => {
+          const tr = document.createElement('tr');
+          const trendLabel = item.trend === 'up' ? '↑ +2.1%' : (item.trend === 'down' ? '↓ -1.5%' : '→ 持平');
+          tr.innerHTML = `
+            <td style="font-weight:500;">${item.model}</td>
+            <td>¥${item.jd.toLocaleString()}</td>
+            <td style="color:var(--accent);">¥${item.tb.toLocaleString()}</td>
+            <td><span class="trend ${item.trend}">${trendLabel}</span></td>
+            <td style="color:#888;">${item.stock}</td>
+          `;
+          priceTbody.appendChild(tr);
+        });
       }
-    }
 
-    // 事件绑定
-    btnRefreshPrice.addEventListener('click', function() {
-      this.textContent = '同步中...';
-      setTimeout(() => {
-        const newData = localPriceData.map(d => ({
-          ...d, jd: d.jd + Math.floor(Math.random() * 200 - 100), tb: d.tb + Math.floor(Math.random() * 150 - 75)
-        }));
-        renderPrices(newData);
-        this.textContent = '✓ 已更新';
-        setTimeout(() => this.textContent = '同步最新数据', 2000);
-      }, 600);
+      function renderLB(data) {
+        lbList.innerHTML = '';
+        data.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'lb-item';
+          div.innerHTML = `
+            <span class="lb-rank">#${item.rank}</span>
+            <span class="lb-name">${item.name}</span>
+            <span class="lb-score">${item.score}</span>
+          `;
+          lbList.appendChild(div);
+        });
+      }
+
+      function renderPromos(data) {
+        promoContainer.innerHTML = '';
+        data.forEach(item => {
+          const card = document.createElement('div');
+          card.className = 'promo-card';
+          card.innerHTML = `
+            <div class="promo-inner">
+              <div class="promo-tag">${item.platform}</div>
+              <h3 class="promo-title">${item.title}</h3>
+              <p style="color:#777; font-size:0.9rem;">${item.desc}</p>
+              <div class="promo-btn">申领额度</div>
+            </div>
+          `;
+          promoContainer.appendChild(card);
+        });
+      }
+
+      function renderRSS(data) {
+        rssContainer.innerHTML = '';
+        Object.entries(data).forEach(([source, articles]) => {
+          const col = document.createElement('div');
+          col.className = 'rss-col';
+          col.innerHTML = `<h3>${source}</h3><div class="rss-col-list"></div>`;
+          const list = col.querySelector('.rss-col-list');
+          articles.forEach(art => {
+            const div = document.createElement('div');
+            div.className = 'rss-item';
+            div.innerHTML = `<div style="font-weight:500;">${art.title}</div><div class="rss-date">${art.time}</div>`;
+            list.appendChild(div);
+          });
+          rssContainer.appendChild(col);
+        });
+      }
+
+      renderPrices(priceData);
+      renderLB(lbData);
+      renderPromos(promoData);
+      renderRSS(rssData);
+
+      let mouseX = 0, mouseY = 0, cursorX = 0, cursorY = 0;
+      document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
+      function animateCursor() {
+        cursorX += (mouseX - cursorX) * 0.12;
+        cursorY += (mouseY - cursorY) * 0.12;
+        cursor.style.transform = `translate(${cursorX}px, ${cursorY}px) translate(-50%, -50%)`;
+        requestAnimationFrame(animateCursor);
+      }
+      animateCursor();
+
+      const hoverTargets = document.querySelectorAll('a, button, .promo-card, .rss-item, .card');
+      hoverTargets.forEach(el => {
+        el.addEventListener('mouseenter', () => {
+          cursor.style.width = '36px'; cursor.style.height = '36px'; cursor.style.background = '#fff';
+        });
+        el.addEventListener('mouseleave', () => {
+          cursor.style.width = '16px'; cursor.style.height = '16px'; cursor.style.background = 'var(--accent)';
+        });
+      });
+
+      const parallaxEls = document.querySelectorAll('.parallax-text');
+      let scrollY = 0, ticking = false;
+      document.addEventListener('scroll', () => {
+        scrollY = window.scrollY;
+        if (!ticking) {
+          window.requestAnimationFrame(() => {
+            parallaxEls.forEach(el => {
+              const speed = parseFloat(el.dataset.speed) || 0;
+              el.style.transform = `translateY(${-scrollY * speed}px)`;
+            });
+            ticking = false;
+          });
+          ticking = true;
+        }
+      });
+
+      const tiltContainers = document.querySelectorAll('.promo-inner, .card-visual');
+      tiltContainers.forEach(container => {
+        const target = container.closest('.promo-card') || container.parentElement;
+        if(!target) return;
+        target.addEventListener('mousemove', (e) => {
+          const rect = target.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          const rotateY = ((x - rect.width / 2) / (rect.width / 2)) * 10;
+          const rotateX = ((rect.height / 2 - y) / (rect.height / 2)) * 10;
+          container.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+        });
+        target.addEventListener('mouseleave', () => {
+          container.style.transform = 'perspective(1000px) rotateX(0) rotateY(0) scale3d(1, 1, 1)';
+        });
+      });
+
+      document.getElementById('btn-refresh-price').addEventListener('click', function() {
+        this.textContent = '同步中...';
+        setTimeout(() => {
+          const newData = priceData.map(d => ({
+            ...d, jd: d.jd + Math.floor(Math.random() * 200 - 100), tb: d.tb + Math.floor(Math.random() * 150 - 75)
+          }));
+          renderPrices(newData);
+          this.textContent = '✓ 已更新';
+          setTimeout(() => this.textContent = '同步最新数据', 2000);
+        }, 600);
+      });
+
+      document.getElementById('btn-sync-lb').addEventListener('click', function() {
+        this.textContent = '拉取中...';
+        setTimeout(() => {
+          const newData = lbData.map(d => ({...d, score: d.score + Math.floor(Math.random() * 10 - 3)}))
+            .sort((a,b) => b.score - a.score).map((d,i) => ({...d, rank: i+1}));
+          renderLB(newData);
+          this.textContent = '✓ 榜单已刷新';
+          setTimeout(() => this.textContent = ' 刷新榜单数据', 2000);
+        }, 700);
+      });
+
+      rssContainer.addEventListener('click', (e) => {
+        const item = e.target.closest('.rss-item');
+        if(item) alert('即将跳转至原文详情页 (演示模式)');
+      });
     });
-
-    btnSyncLb.addEventListener('click', fetchLMSYS);
-    rssContainer.addEventListener('click', (e) => {
-      const item = e.target.closest('.rss-item');
-      if (item && item.dataset.link) window.open(item.dataset.link, '_blank');
-    });
-
-    // 初始加载
-    renderPrices(localPriceData);
-    fetchLMSYS();
-    fetchRSS();
-    
-    // 后台轮询 (每15分钟)
-    setInterval(() => { fetchLMSYS(); fetchRSS(); }, 900000);
-  });
-</script>
+  </script>
+</body>
+</html>
