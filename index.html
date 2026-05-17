@@ -1,0 +1,137 @@
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // DOM 节点引用
+    const priceTbody = document.getElementById('price-tbody');
+    const lbList = document.getElementById('lb-list');
+    const rssContainer = document.getElementById('rss-container');
+    const btnRefreshPrice = document.getElementById('btn-refresh-price');
+    const btnSyncLb = document.getElementById('btn-sync-lb');
+
+    // ================= 模拟本地行情 (电商平台无公开跨域接口) =================
+    const localPriceData = [
+      { model: 'NVIDIA RTX 4090 24G', jd: 14999, tb: 13200, trend: 'up', stock: '紧张' },
+      { model: 'NVIDIA RTX 4080 Super', jd: 8999, tb: 8450, trend: 'stable', stock: '充足' },
+      { model: 'AMD Radeon RX 7900 XTX', jd: 7499, tb: 6990, trend: 'down', stock: '充足' },
+      { model: 'NVIDIA H100 80G SXM', jd: 235000, tb: 218000, trend: 'up', stock: '期货排单' },
+      { model: 'NVIDIA L40S 48G', jd: 89000, tb: 84500, trend: 'stable', stock: '充足' }
+    ];
+
+    // 渲染函数
+    function renderPrices(data) {
+      priceTbody.innerHTML = '';
+      data.forEach(item => {
+        const tr = document.createElement('tr');
+        const trendLabel = item.trend === 'up' ? '↑ +2.1%' : (item.trend === 'down' ? '↓ -1.5%' : '→ 持平');
+        tr.innerHTML = `
+          <td style="font-weight:500;">${item.model}</td>
+          <td>¥${item.jd.toLocaleString()}</td>
+          <td style="color:var(--accent);">¥${item.tb.toLocaleString()}</td>
+          <td><span class="trend ${item.trend}">${trendLabel}</span></td>
+          <td style="color:#888;">${item.stock}</td>
+        `;
+        priceTbody.appendChild(tr);
+      });
+    }
+
+    function renderLB(data) {
+      lbList.innerHTML = '';
+      data.slice(0, 6).forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'lb-item';
+        div.innerHTML = `
+          <span class="lb-rank">#${item.rank}</span>
+          <span class="lb-name">${item.name}</span>
+          <span class="lb-score">${item.score}</span>
+        `;
+        lbList.appendChild(div);
+      });
+    }
+
+    function renderRSS(source, items) {
+      const col = document.createElement('div');
+      col.className = 'rss-col';
+      col.innerHTML = `<h3>${source}</h3><div class="rss-col-list"></div>`;
+      const list = col.querySelector('.rss-col-list');
+      items.slice(0, 4).forEach(art => {
+        const div = document.createElement('div');
+        div.className = 'rss-item';
+        div.innerHTML = `
+          <div style="font-weight:500; cursor:pointer;">${art.title}</div>
+          <div class="rss-date">${new Date(art.pubDate).toLocaleString('zh-CN')}</div>
+        `;
+        div.querySelector('div').addEventListener('click', () => window.open(art.link, '_blank'));
+        list.appendChild(div);
+      });
+      rssContainer.appendChild(col);
+    }
+
+    // ================= 真实网络请求 =================
+    async function fetchLMSYS() {
+      btnSyncLb.textContent = '拉取中...';
+      try {
+        const res = await fetch('/api/lmsys');
+        const data = await res.json();
+        // HF 榜单结构适配
+        const formatted = data.models
+          .sort((a, b) => (b.model_statistics?.avg_win_rate || 0) - (a.model_statistics?.avg_win_rate || 0))
+          .map((m, i) => ({
+            rank: i + 1,
+            name: m.display_name || m.model_name,
+            score: Math.round((m.model_statistics?.avg_win_rate || 0) * 1000)
+          }));
+        renderLB(formatted);
+        btnSyncLb.textContent = '✓ 榜单已同步';
+      } catch (e) {
+        console.error('LMSYS fetch failed:', e);
+        btnSyncLb.textContent = '⚠ 同步失败，请重试';
+      }
+      setTimeout(() => btnSyncLb.textContent = '↻ 拉取 LMSYS 实时榜单', 2000);
+    }
+
+    async function fetchRSS() {
+      const sources = [
+        { key: '36kr', name: '36氪' },
+        { key: 'qbit', name: '量子位' },
+        { key: 'jqzx', name: '机器之心' }
+      ];
+      for (const s of sources) {
+        try {
+          const res = await fetch(`/api/rss/${s.key}`);
+          const json = await res.json();
+          if (json.items?.length) renderRSS(s.name, json.items);
+        } catch (e) {
+          console.warn(`${s.name} RSS fetch failed`, e);
+          renderRSS(s.name, [{ title: '数据源暂不可用，请刷新页面', link: '#', pubDate: new Date() }]);
+        }
+      }
+    }
+
+    // 事件绑定
+    btnRefreshPrice.addEventListener('click', function() {
+      this.textContent = '同步中...';
+      setTimeout(() => {
+        const newData = localPriceData.map(d => ({
+          ...d, jd: d.jd + Math.floor(Math.random() * 200 - 100), tb: d.tb + Math.floor(Math.random() * 150 - 75)
+        }));
+        renderPrices(newData);
+        this.textContent = '✓ 已更新';
+        setTimeout(() => this.textContent = '同步最新数据', 2000);
+      }, 600);
+    });
+
+    btnSyncLb.addEventListener('click', fetchLMSYS);
+    rssContainer.addEventListener('click', (e) => {
+      const item = e.target.closest('.rss-item');
+      if (item && item.dataset.link) window.open(item.dataset.link, '_blank');
+    });
+
+    // 初始加载
+    renderPrices(localPriceData);
+    fetchLMSYS();
+    fetchRSS();
+    
+    // 后台轮询 (每15分钟)
+    setInterval(() => { fetchLMSYS(); fetchRSS(); }, 900000);
+  });
+</script>

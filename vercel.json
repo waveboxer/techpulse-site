@@ -1,0 +1,28 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/lmsys",
+      "destination": "https://huggingface.co/api/spaces/lmsys/chatbot-arena-leaderboard/files/leaderboard.json"
+    },
+    {
+      "source": "/api/rss/36kr",
+      "destination": "https://api.rss2json.com/v1/api.json?rss_url=https://36kr.com/feed"
+    },
+    {
+      "source": "/api/rss/qbit",
+      "destination": "https://api.rss2json.com/v1/api.json?rss_url=https://www.qbitai.com/feed"
+    },
+    {
+      "source": "/api/rss/jqzx",
+      "destination": "https://api.rss2json.com/v1/api.json?rss_url=https://www.jiqizhixin.com/rss"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300, stale-while-revalidate=86400" }
+      ]
+    }
+  ]
+}
